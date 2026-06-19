@@ -1,38 +1,43 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
-import { auth } from './firebase';
+import { auth, db } from './firebase'; // Imported live db reference
 import { onAuthStateChanged } from 'firebase/auth';
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore'; // Firebase Firestore streams
 import Auth from './Auth';
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // Mock telemetry data representing what your pipeline will stream into Firestore
-  const [transcripts, setTranscripts] = useState([
-    {
-      id: '1',
-      timestamp: '3:14 PM',
-      text: "The patient is experiencing persistent fatigue following their third cycle, alongside a noted 15% drop in daily liquid intake.",
-      sentiment: 'High Distress',
-      biomarkerMatch: 'Dehydration Risk / Cortisol spike'
-    },
-    {
-      id: '2',
-      timestamp: '2:45 PM',
-      text: "Spoke with care team. Baseline mobility is stable but reporting localized pain levels at a 6 out of 10.",
-      sentiment: 'Moderate Distress',
-      biomarkerMatch: 'Pain Management Protocol Delta'
-    }
-  ]);
+  const [transcripts, setTranscripts] = useState([]); // Clear hardcoded state
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
     });
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
+
+  // Live Firestore database subscription
+  useEffect(() => {
+    if (!user) return;
+
+    // Create a query pointing to your transcripts collection sorted by time
+    const q = query(collection(db, "transcripts"), orderBy("timestamp", "desc"));
+
+    // Establish a live real-time connection stream
+    const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
+      const dataItems = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTranscripts(dataItems);
+    }, (error) => {
+      console.error("Firestore live stream intercepted: ", error);
+    });
+
+    return () => unsubscribeFirestore();
+  }, [user]);
 
   if (loading) {
     return (
@@ -44,7 +49,7 @@ function App() {
 
   return (
     <div style={{ 
-      padding: '40px 40px 120px 40px', // Extra bottom padding so content never gets hidden by the footer
+      padding: '40px 40px 120px 40px', 
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', 
       maxWidth: '1100px', 
       margin: '0 auto', 
@@ -54,7 +59,6 @@ function App() {
       boxSizing: 'border-box'
     }}>
       
-      {/* CSS Animations & Custom Sleek Classes */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(12px); }
@@ -63,7 +67,7 @@ function App() {
         @keyframes pulse {
           0% { box-shadow: 0 0 0 0 rgba(230, 57, 70, 0.4); }
           70% { box-shadow: 0 0 0 8px rgba(230, 57, 70, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(230, 57, 70, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(230, 57, 70, 0.4); }
         }
         .dashboard-card {
           background: rgba(255, 255, 255, 0.03);
@@ -87,33 +91,15 @@ function App() {
         }
       `}</style>
 
-      {/* Main Header without any wind emojis */}
-      <header style={{ 
-  borderBottom: '1px solid rgba(255,255,255,0.08)', 
-  paddingBottom: '24px', 
-  marginBottom: '32px',
-  marginTop: '20px' // Gives breathing room at the very top of the screen
-}}>
-  <h1 style={{ 
-    fontSize: '2.6rem', 
-    fontWeight: '800', 
-    margin: '0 0 8px 0', 
-    lineHeight: '1.3', // Prevents the top or bottom of tall letters from being clipped
-    background: 'linear-gradient(135deg, #fff 0%, #a5a5b0 100%)', 
-    WebkitBackgroundClip: 'text', 
-    WebkitTextFillColor: 'transparent' 
-  }}>
-    OncoWispr Care Hub
-  </h1>
-  <p style={{ color: '#6b7280', margin: 0, fontSize: '15px', letterSpacing: '0.3px' }}>
-    Clinical Dashboard Ecosystem & Real-Time Pipeline
-  </p>
-</header>
+      <header style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '24px', marginBottom: '32px', marginTop: '20px' }}>
+        <h1 style={{ fontSize: '2.6rem', fontWeight: '800', margin: '0 0 8px 0', lineHeight: '1.3', background: 'linear-gradient(135deg, #fff 0%, #a5a5b0 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          OncoWispr Care Hub
+        </h1>
+        <p style={{ color: '#6b7280', margin: 0, fontSize: '15px', letterSpacing: '0.3px' }}>Clinical Dashboard Ecosystem & Real-Time Pipeline</p>
+      </header>
 
-      {/* Login / Auth forms go here if not logged in */}
       <Auth user={user} />
 
-      {/* Main Animated Dashboard Interface */}
       {user && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', gap: '32px', marginTop: '32px' }}>
@@ -125,41 +111,47 @@ function App() {
               </h2>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {transcripts.map((item, index) => (
-                  <div 
-                    key={item.id} 
-                    className="dashboard-card" 
-                    style={{ 
-                      animationDelay: `${index * 0.15}s`,
-                      borderLeft: item.sentiment === 'High Distress' ? '4px solid #e63946' : '4px solid #ffb703' 
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '500' }}>Timestamp: {item.timestamp}</span>
-                      <span 
-                        className={item.sentiment === 'High Distress' ? 'pulse-badge' : ''}
-                        style={{ 
-                          fontSize: '11px', 
-                          padding: '4px 10px', 
-                          borderRadius: '20px', 
-                          background: item.sentiment === 'High Distress' ? 'rgba(230,57,70,0.12)' : 'rgba(255,183,3,0.12)', 
-                          color: item.sentiment === 'High Distress' ? '#ff4d5a' : '#ffb703', 
-                          fontWeight: '700',
-                          letterSpacing: '0.5px',
-                          textTransform: 'uppercase'
-                        }}
-                      >
-                        {item.sentiment}
-                      </span>
-                    </div>
-                    <p style={{ margin: '0 0 20px 0', fontSize: '16px', lineHeight: '1.6', color: '#e5e7eb' }}>
-                      "{item.text}"
-                    </p>
-                    <div style={{ fontSize: '13px', color: '#a8dadc', background: 'rgba(168,218,220,0.06)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(168,218,220,0.1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>🔍</span> <span><strong>Biomarker Delta:</strong> {item.biomarkerMatch}</span>
-                    </div>
+                {transcripts.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280', border: '1px dashed #222', borderRadius: '12px' }}>
+                    No streams captured yet. Awaiting database transaction packages...
                   </div>
-                ))}
+                ) : (
+                  transcripts.map((item, index) => (
+                    <div 
+                      key={item.id} 
+                      className="dashboard-card" 
+                      style={{ 
+                        animationDelay: `${index * 0.1}s`,
+                        borderLeft: item.sentiment === 'High Distress' ? '4px solid #e63946' : '4px solid #ffb703' 
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                        <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '500' }}>Timestamp: {item.timestamp}</span>
+                        <span 
+                          className={item.sentiment === 'High Distress' ? 'pulse-badge' : ''}
+                          style={{ 
+                            fontSize: '11px', 
+                            padding: '4px 10px', 
+                            borderRadius: '20px', 
+                            background: item.sentiment === 'High Distress' ? 'rgba(230,57,70,0.12)' : 'rgba(255,183,3,0.12)', 
+                            color: item.sentiment === 'High Distress' ? '#ff4d5a' : '#ffb703', 
+                            fontWeight: '700',
+                            letterSpacing: '0.5px',
+                            textTransform: 'uppercase'
+                          }}
+                        >
+                          {item.sentiment || 'Evaluating'}
+                        </span>
+                      </div>
+                      <p style={{ margin: '0 0 20px 0', fontSize: '16px', lineHeight: '1.6', color: '#e5e7eb' }}>
+                        "{item.text}"
+                      </p>
+                      <div style={{ fontSize: '13px', color: '#a8dadc', background: 'rgba(168,218,220,0.06)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(168,218,220,0.1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>🔍</span> <span><strong>Biomarker Delta:</strong> {item.biomarkerMatch || 'Processing...'}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -197,7 +189,6 @@ function App() {
 
           </div>
 
-          {/* Clean Sticky Footer Status Bar */}
           <footer style={{
             position: 'fixed',
             bottom: 0,
