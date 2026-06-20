@@ -1,14 +1,14 @@
-// src/App.jsx
 import React, { useState, useEffect } from 'react';
-import { auth, db } from './firebase'; // Imported live db reference
+import { auth, db } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore'; // Firebase Firestore streams
+import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import Auth from './Auth';
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [transcripts, setTranscripts] = useState([]); // Clear hardcoded state
+  const [transcripts, setTranscripts] = useState([]);
+  const [activeTab, setActiveTab] = useState('pipeline');
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -18,224 +18,297 @@ function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // Live Firestore database subscription
   useEffect(() => {
     if (!user) return;
-
-    // Create a query pointing to your transcripts collection sorted by time
     const q = query(collection(db, "transcripts"), orderBy("timestamp", "desc"));
-
-    // Establish a live real-time connection stream
     const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
       const dataItems = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       setTranscripts(dataItems);
-    }, (error) => {
-      console.error("Firestore live stream intercepted: ", error);
     });
-
     return () => unsubscribeFirestore();
   }, [user]);
 
+  const totalLogs = transcripts.length;
+  const highDistressCount = transcripts.filter(t => t.sentiment === 'High Distress').length;
+  const modDistressCount = transcripts.filter(t => t.sentiment === 'Moderate Distress').length;
+  const distressRatio = totalLogs > 0 ? Math.round(((highDistressCount + modDistressCount) / totalLogs) * 100) : 0;
+
+  const recentFlags = transcripts
+    .filter(t => t.sentiment === 'High Distress')
+    .map(t => t.biomarkerMatch)
+    .slice(0, 3);
+
+  const currentStatus = totalLogs > 0 ? transcripts[0].sentiment : 'Stable Baseline';
+
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#0a0a0c', color: '#fff', fontFamily: 'Arial, sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#0a0a0c', color: '#D1FAD5', fontFamily: 'sans-serif' }}>
         <div style={{ fontSize: '16px', letterSpacing: '1px' }}>Loading Care Hub...</div>
       </div>
     );
   }
 
   return (
-    <div style={{ 
-      padding: '40px 40px 120px 40px', 
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', 
-      maxWidth: '1100px', 
-      margin: '0 auto', 
-      color: '#f3f4f6', 
-      backgroundColor: '#0a0a0c', 
-      minHeight: '100vh',
-      boxSizing: 'border-box'
-    }}>
+    <div style={{ padding: '40px 40px 120px 40px', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', maxWidth: '1100px', margin: '0 auto', color: '#D1FAD5', backgroundColor: '#0a0a0c', minHeight: '100vh', boxSizing: 'border-box' }}>
       
       <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(12px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes pulse {
-          0% { box-shadow: 0 0 0 0 rgba(230, 57, 70, 0.4); }
-          70% { box-shadow: 0 0 0 8px rgba(230, 57, 70, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(230, 57, 70, 0.4); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseDistress {
+          0% { box-shadow: 0 0 0 0 rgba(216, 66, 49, 0.4); }
+          70% { box-shadow: 0 0 0 8px rgba(216, 66, 49, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(216, 66, 49, 0); }
         }
         .dashboard-card {
-          background: rgba(255, 255, 255, 0.03);
+          background: rgba(209, 250, 213, 0.02);
           backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(209, 250, 213, 0.06);
           border-radius: 12px;
           padding: 24px;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          animation: fadeIn 0.6s ease-out both;
+          animation: fadeIn 0.4s ease-out both;
+          transition: all 0.3s ease;
         }
         .dashboard-card:hover {
-          transform: translateY(-2px);
-          background: rgba(255, 255, 255, 0.05);
-          border-color: rgba(255, 255, 255, 0.1);
+          background: rgba(209, 250, 213, 0.04);
+          border-color: rgba(79, 181, 140, 0.3);
         }
-        .pulse-badge {
-          animation: pulse 2s infinite;
+        .tab-btn {
+          padding: 12px 24px;
+          background: transparent;
+          border: none;
+          color: rgba(209, 250, 213, 0.4);
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 14px;
+          transition: all 0.2s;
+          border-bottom: 2px solid transparent;
+        }
+        .tab-btn:hover {
+          color: #D1FAD5;
+        }
+        .tab-btn.active {
+          color: #4FB58C;
+          border-bottom: 2px solid #4FB58C;
+        }
+        .pulse-red {
+          animation: pulseDistress 2s infinite;
         }
         .progress-fill {
-          transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+          transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
       `}</style>
 
-      <header style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '24px', marginBottom: '32px', marginTop: '20px' }}>
-        <h1 style={{ fontSize: '2.6rem', fontWeight: '800', margin: '0 0 8px 0', lineHeight: '1.3', background: 'linear-gradient(135deg, #fff 0%, #a5a5b0 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+      {/* Main Header Container with fixed clipping */}
+      <header style={{ borderBottom: '1px solid rgba(209, 250, 213, 0.1)', paddingBottom: '24px', marginBottom: '32px', marginTop: '40px' }}>
+        <h1 style={{ 
+          fontSize: '2.8rem', 
+          fontWeight: '800', 
+          margin: '0 0 4px 0', 
+          lineHeight: '1.5', 
+          background: 'linear-gradient(135deg, #ffffff 0%, #4FB58C 100%)', 
+          WebkitBackgroundClip: 'text', 
+          WebkitTextFillColor: 'transparent',
+          display: 'block',
+          paddingBottom: '4px'
+        }}>
           OncoWispr Care Hub
         </h1>
-        <p style={{ color: '#6b7280', margin: 0, fontSize: '15px', letterSpacing: '0.3px' }}>Clinical Dashboard Ecosystem & Real-Time Pipeline</p>
+        <p style={{ color: 'rgba(209, 250, 213, 0.5)', margin: 0, fontSize: '15px', letterSpacing: '0.3px' }}>All your past entries, resources, and analytics in one place.</p>
       </header>
 
       <Auth user={user} />
 
       {user && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', gap: '32px', marginTop: '32px' }}>
-            
-            {/* Left Column: Live Streaming Transcripts */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: '600', color: '#9ca3af', letterSpacing: '0.5px', textTransform: 'uppercase', margin: '0' }}>
-                📡 Live Stream Pipeline
-              </h2>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {transcripts.length === 0 ? (
-                  <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280', border: '1px dashed #222', borderRadius: '12px' }}>
-                    No streams captured yet. Awaiting database transaction packages...
-                  </div>
-                ) : (
-                  transcripts.map((item, index) => (
-                    <div 
-                      key={item.id} 
-                      className="dashboard-card" 
-                      style={{ 
-                        animationDelay: `${index * 0.1}s`,
-                        borderLeft: item.sentiment === 'High Distress' ? '4px solid #e63946' : '4px solid #ffb703' 
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                        <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: '500' }}>Timestamp: {item.timestamp}</span>
-                        <span 
-                          className={item.sentiment === 'High Distress' ? 'pulse-badge' : ''}
-                          style={{ 
-                            fontSize: '11px', 
-                            padding: '4px 10px', 
-                            borderRadius: '20px', 
-                            background: item.sentiment === 'High Distress' ? 'rgba(230,57,70,0.12)' : 'rgba(255,183,3,0.12)', 
-                            color: item.sentiment === 'High Distress' ? '#ff4d5a' : '#ffb703', 
-                            fontWeight: '700',
-                            letterSpacing: '0.5px',
-                            textTransform: 'uppercase'
-                          }}
-                        >
-                          {item.sentiment || 'Evaluating'}
-                        </span>
-                      </div>
-                      <p style={{ margin: '0 0 20px 0', fontSize: '16px', lineHeight: '1.6', color: '#e5e7eb' }}>
-                        "{item.text}"
-                      </p>
-                      <div style={{ fontSize: '13px', color: '#a8dadc', background: 'rgba(168,218,220,0.06)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(168,218,220,0.1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>🔍</span> <span><strong>Biomarker Delta:</strong> {item.biomarkerMatch || 'Processing...'}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Right Column: Analytics Insights Summary */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: '600', color: '#9ca3af', letterSpacing: '0.5px', textTransform: 'uppercase', margin: '0' }}>
-                📊 System Analytics
-              </h2>
-              
-              <div className="dashboard-card" style={{ background: 'rgba(255,255,255,0.01)', animationDelay: '0.3s' }}>
-                <h4 style={{ margin: '0 0 8px 0', color: '#3a86ff', fontSize: '15px', fontWeight: '600' }}>Groq / Llama Engine Status</h4>
-                <p style={{ fontSize: '14px', color: '#9ca3af', margin: '0 0 24px 0', lineHeight: '1.5' }}>Pipeline active. Evaluating speech structure for physiological distress markers.</p>
-                
-                <div style={{ marginBottom: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#9ca3af', marginBottom: '6px' }}>
-                    <span>Pinecone Vector Match Sync</span>
-                    <span style={{ fontWeight: 'bold', color: '#3a86ff' }}>83%</span>
-                  </div>
-                  <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', height: '6px', borderRadius: '10px', overflow: 'hidden' }}>
-                    <div className="progress-fill" style={{ width: '83%', background: 'linear-gradient(90deg, #3a86ff, #00b4d8)', height: '100%', borderRadius: '10px' }}></div>
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#9ca3af', marginBottom: '6px' }}>
-                    <span>Firestore Write Stream</span>
-                    <span style={{ fontWeight: 'bold', color: '#4caf50' }}>100%</span>
-                  </div>
-                  <div style={{ width: '100%', background: 'rgba(255,255,255,0.05)', height: '6px', borderRadius: '10px', overflow: 'hidden' }}>
-                    <div className="progress-fill" style={{ width: '100%', background: 'linear-gradient(90deg, #4caf50, #81c784)', height: '100%', borderRadius: '10px' }}></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
+          {/*Tabs*/}
+          <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid rgba(209, 250, 213, 0.1)', marginBottom: '32px' }}>
+            <button className={`tab-btn ${activeTab === 'pipeline' ? 'active' : ''}`} onClick={() => setActiveTab('pipeline')}>Live Stream</button>
+            <button className={`tab-btn ${activeTab === 'journal' ? 'active' : ''}`} onClick={() => setActiveTab('journal')}>Daily Journal</button>
+            <button className={`tab-btn ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => setActiveTab('analytics')}>Health Analytics</button>
+            <button className={`tab-btn ${activeTab === 'resources' ? 'active' : ''}`} onClick={() => setActiveTab('resources')}>Community Resources</button>
           </div>
 
-          <footer style={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: '70px',
-            background: '#0e0e12',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '0 40px',
-            zIndex: 1000,
-            backdropFilter: 'blur(20px)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-              <span style={{ fontSize: '14px', fontWeight: '600', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>User Status</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(58, 134, 255, 0.1)', padding: '6px 12px', borderRadius: '6px', fontSize: '13px', color: '#3a86ff', fontWeight: '500' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3a86ff' }}></span>
-                Authenticated Session
+          {/*Tab 1*/}
+          {activeTab === 'pipeline' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', gap: '32px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <h3 style={{ margin: 0, fontSize: '13px', color: '#4FB58C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Incoming Ingestion Stream</h3>
+                {transcripts.length === 0 ? (
+                  <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(209, 250, 213, 0.3)', border: '1px dashed rgba(209, 250, 213, 0.15)', borderRadius: '12px' }}>Awaiting transmission packets...</div>
+                ) : (
+                  <div className="dashboard-card" style={{ borderLeft: transcripts[0].sentiment === 'High Distress' ? '4px solid #D84231' : '4px solid #4FB58C' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <span style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.5)' }}>Latest Drop • {transcripts[0].timestamp}</span>
+                      <span 
+                        className={transcripts[0].sentiment === 'High Distress' ? 'pulse-red' : ''}
+                        style={{ 
+                          fontSize: '11px', 
+                          padding: '4px 10px', 
+                          borderRadius: '20px', 
+                          background: transcripts[0].sentiment === 'High Distress' ? 'rgba(216, 66, 49, 0.15)' : 'rgba(26, 216, 44, 0.15)', 
+                          color: transcripts[0].sentiment === 'High Distress' ? '#D84231' : '#1AD82C', 
+                          fontWeight: '700',
+                          textTransform: 'uppercase'
+                        }}
+                      >
+                        {transcripts[0].sentiment}
+                      </span>
+                    </div>
+                    <p style={{ margin: '0 0 20px 0', fontSize: '16px', lineHeight: '1.6', color: '#fff' }}>"{transcripts[0].text}"</p>
+                    <div style={{ fontSize: '13px', color: '#D1FAD5', background: 'rgba(79, 181, 140, 0.08)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(79, 181, 140, 0.15)' }}>
+                      <strong>Biomarker Output:</strong> {transcripts[0].biomarkerMatch}
+                    </div>
+                  </div>
+                )}
               </div>
-              <span style={{ fontSize: '14px', color: '#6b7280' }}>{user.email}</span>
+
+              <div>
+                <div className="dashboard-card">
+                  <h4 style={{ margin: '0 0 8px 0', color: '#4FB58C', fontWeight: '600' }}>Python Bridge Pipeline</h4>
+                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.6)', margin: '0 0 20px 0', lineHeight: '1.5' }}>Listening for audio processing completions from your partner's script.</p>
+                  <div style={{ fontSize: '13px', color: '#1AD82C', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#1AD82C' }}></span> Ingestion Socket Active
+                  </div>
+                </div>
+              </div>
             </div>
-            
+          )}
+
+          {/*Tab 2*/}
+          {activeTab === 'journal' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '13px', color: '#4FB58C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Historical Transcripts Logs ({totalLogs})</h3>
+              {transcripts.map((entry) => (
+                <div key={entry.id} className="dashboard-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '13px' }}>
+                    <span style={{ color: 'rgba(209, 250, 213, 0.4)' }}>Logged at {entry.timestamp}</span>
+                    <span style={{ color: entry.sentiment === 'High Distress' ? '#D84231' : '#1AD82C', fontWeight: '700' }}>{entry.sentiment}</span>
+                  </div>
+                  <p style={{ margin: '0 0 14px 0', color: '#fff', fontSize: '15px' }}>"{entry.text}"</p>
+                  <div style={{ fontSize: '13px', color: '#4FB58C' }}><strong>Linguistic Variant:</strong> {entry.biomarkerMatch}</div>
+                  
+                  {entry.summary && (
+                    <div style={{ marginTop: '14px', fontSize: '13px', color: '#D1FAD5', background: 'rgba(79, 181, 140, 0.05)', padding: '12px 16px', borderRadius: '6px', borderLeft: '3px solid #4FB58C' }}>
+                      ✉️ <strong>Caregiver Update:</strong> {entry.summary}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/*Tab 3*/}
+          {activeTab === 'analytics' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+              <div className="dashboard-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <h4 style={{ margin: '0 0 12px 0', color: '#D84231', fontSize: '14px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Depression Predictive NLP Density
+                  </h4>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', margin: '20px 0' }}>
+                    <span style={{ fontSize: '48px', fontWeight: '800', color: '#fff' }}>{distressRatio}%</span>
+                    <span style={{ color: distressRatio > 50 ? '#D84231' : '#1AD82C', fontSize: '14px', fontWeight: '600' }}>
+                      {distressRatio > 50 ? '▲ Elevated Stress Vector' : '✓ Normal Baseline'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '14px', color: 'rgba(209, 250, 213, 0.6)', lineHeight: '1.6', margin: 0 }}>
+                    Ratio of conversational text streams matching high or moderate distress markers against total entries.
+                  </p>
+                </div>
+                <div style={{ width: '100%', background: 'rgba(209, 250, 213, 0.08)', height: '10px', borderRadius: '10px', marginTop: '24px', overflow: 'hidden' }}>
+                  <div className="progress-fill" style={{ width: `${distressRatio}%`, background: distressRatio > 50 ? '#D84231' : '#1AD82C', height: '100%', borderRadius: '10px' }}></div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div className="dashboard-card">
+                  <h4 style={{ margin: '0 0 4px 0', color: '#4FB58C', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase' }}>
+                    Total Linguistic Captures
+                  </h4>
+                  <div style={{ fontSize: '36px', fontWeight: '800', margin: '8px 0', color: '#fff' }}>{totalLogs}</div>
+                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.4)', margin: 0 }}>Checkpoints parsed inside this sandbox domain.</p>
+                </div>
+
+                <div className="dashboard-card">
+                  <h4 style={{ margin: '0 0 12px 0', color: '#4FB58C', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase' }}>
+                    Active Biomarker Anomaly Log
+                  </h4>
+                  {recentFlags.length === 0 ? (
+                    <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.4)', margin: 0 }}>No critical anomalies logged in recent sessions.</p>
+                  ) : (
+                    <ul style={{ margin: 0, paddingLeft: '20px', color: '#fff', fontSize: '13px', lineHeight: '1.8' }}>
+                      {recentFlags.map((flag, idx) => (
+                        <li key={idx} style={{ color: '#D84231' }}><span style={{ color: '#D1FAD5' }}>{flag}</span></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/*Tab 4*/}
+          {activeTab === 'resources' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ borderBottom: '1px solid rgba(209, 250, 213, 0.1)', paddingBottom: '12px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '1.2rem', fontWeight: '600', color: '#fff' }}>Automated Support Matching</h3>
+                <p style={{ color: 'rgba(209, 250, 213, 0.6)', margin: 0, fontSize: '14px' }}>
+                  Current Status: <strong style={{ color: currentStatus === 'High Distress' ? '#D84231' : '#1AD82C' }}>{currentStatus}</strong>.
+                </p>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div className="dashboard-card" style={{ border: currentStatus === 'High Distress' ? '1px solid rgba(216, 66, 49, 0.3)' : '1px solid rgba(209, 250, 213, 0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                    <h4 style={{ margin: 0, color: '#4FB58C', fontSize: '16px', fontWeight: '600' }}>Oncology Peer Support Cohorts</h4>
+                    {currentStatus === 'High Distress' && <span style={{ fontSize: '10px', background: 'rgba(216, 66, 49, 0.15)', color: '#D84231', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>RECOMMENDED</span>}
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.6)', lineHeight: '1.6', margin: '0 0 20px 0' }}>
+                    Connects patients with specialized peer-led counseling structures designed specifically for high-energy therapy adjustments.
+                  </p>
+                  <button 
+  onClick={() => window.open('https://www.cancer.org/support-programs-and-services.html', '_blank')}
+  style={{ background: 'rgba(79, 181, 140, 0.15)', color: '#4FB58C', border: 'none', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+>
+  Open Router Bridge
+</button>
+                </div>
+                
+                <div className="dashboard-card" style={{ border: currentStatus === 'High Distress' ? '1px solid #D84231' : '1px solid rgba(209, 250, 213, 0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                    <h4 style={{ margin: 0, color: '#D1FAD5', fontSize: '16px', fontWeight: '600' }}>Clinical Guidance Response Line</h4>
+                    {currentStatus === 'High Distress' && <span style={{ fontSize: '10px', background: '#D84231', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>URGENT ACTION</span>}
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.6)', lineHeight: '1.6', margin: '0 0 20px 0' }}>
+                    A direct portal matching the patient to immediate, dedicated mental health professionals who specialize in medical trauma processing.
+                  </p>
+                  <button 
+  onClick={() => window.open('https://988lifeline.org/', '_blank')}
+  style={{ background: currentStatus === 'High Distress' ? '#D84231' : 'rgba(209, 250, 213, 0.08)', color: currentStatus === 'High Distress' ? '#fff' : '#D1FAD5', border: 'none', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+>
+  {currentStatus === 'High Distress' ? 'Call Responder Now' : 'Access Bridge'}
+</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/*Sign out*/}
+          <footer style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: '70px', background: '#09090c', borderTop: '1px solid rgba(209, 250, 213, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px', zIndex: 1000, backdropFilter: 'blur(20px)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#4FB58C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>User Status</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(79, 181, 140, 0.1)', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', color: '#4FB58C', fontWeight: '500' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#1AD82C' }}></span> Authenticated Session
+              </div>
+              <span style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.5)' }}>{user.email}</span>
+            </div>
             <button 
               onClick={() => auth.signOut()} 
-              style={{ 
-                padding: '8px 16px', 
-                background: 'transparent', 
-                color: '#9ca3af', 
-                border: '1px solid rgba(255,255,255,0.15)', 
-                borderRadius: '6px', 
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: '500',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.background = 'rgba(230, 57, 70, 0.1)';
-                e.target.style.borderColor = '#e63946';
-                e.target.style.color = '#e63946';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.background = 'transparent';
-                e.target.style.borderColor = 'rgba(255,255,255,0.15)';
-                e.target.style.color = '#9ca3af';
-              }}
+              style={{ padding: '8px 16px', background: 'transparent', color: 'rgba(209, 250, 213, 0.5)', border: '1px solid rgba(209, 250, 213, 0.15)', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500', transition: 'all 0.2s' }}
+              onMouseEnter={(e) => { e.target.style.borderColor = '#D84231'; e.target.style.color = '#D84231'; }}
+              onMouseLeave={(e) => { e.target.style.borderColor = 'rgba(209, 250, 213, 0.15)'; e.target.style.color = 'rgba(209, 250, 213, 0.5)'; }}
             >
               Sign Out
             </button>
