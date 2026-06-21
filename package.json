@@ -1,14 +1,16 @@
 {
   "name": "oncowispr",
   "private": true,
+  "homepage": "https://2028badivi.github.io/OncoWispr",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
+  "dev": "vite",
+  "predeploy": "npm run build",
+  "deploy": "gh-pages -d dist",
+  "build": "vite build",
+  "preview": "vite preview"
+  },  
   "dependencies": {
     "@google-cloud/firestore": "^8.6.0",
     "firebase": "^12.15.0",
@@ -24,6 +26,7 @@
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "gh-pages": "^6.3.0",
     "globals": "^17.6.0",
     "vite": "^8.0.12"
   }
