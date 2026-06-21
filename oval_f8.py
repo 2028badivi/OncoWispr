@@ -27,7 +27,7 @@ COLOR_PRESSED    = "#E5E7EB"   # Normal mode oval fill (grayish glassmorphic)
 COLOR_PROCESSING = "#E5E7EB"
 COLOR_IDLE       = "#10B981"   # Emerald (only shown briefly)
 
-API_KEY = os.environ.get('GROQ_API_KEY')"REDACTED_API_KEY"
+API_KEY = os.environ.get('GROQ_API_KEY')os.environ.get('GROQ_API_KEY')
 STT_MODEL  = "whisper-large-v3-turbo"   # Speech-to-text
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "oncowispr.db")
 
