@@ -7,8 +7,7 @@ import Auth from './Auth';
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [transcripts, setTranscripts] = useState([]);
-  const [activeTab, setActiveTab] = useState('pipeline');
+  const [entries, setEntries] = useState([]); 
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -20,28 +19,39 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "transcripts"), orderBy("timestamp", "desc"));
+    const q = query(collection(db, "entries"), orderBy("timestamp", "desc"));
     const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
       const dataItems = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setTranscripts(dataItems);
+      setEntries(dataItems);
     });
     return () => unsubscribeFirestore();
   }, [user]);
 
-  const totalLogs = transcripts.length;
-  const highDistressCount = transcripts.filter(t => t.sentiment === 'High Distress').length;
-  const modDistressCount = transcripts.filter(t => t.sentiment === 'Moderate Distress').length;
+  const [activeTab, setActiveTab] = useState('pipeline'); 
+  const totalLogs = entries.length;
+  
+  const highDistressCount = entries.filter(t => t.depression_score && Number(t.depression_score) >= 7).length;
+  const modDistressCount = entries.filter(t => t.depression_score && Number(t.depression_score) >= 4 && Number(t.depression_score) < 7).length;
   const distressRatio = totalLogs > 0 ? Math.round(((highDistressCount + modDistressCount) / totalLogs) * 100) : 0;
 
-  const recentFlags = transcripts
-    .filter(t => t.sentiment === 'High Distress')
-    .map(t => t.biomarkerMatch)
+  const recentFlags = entries
+    .filter(t => t.depression_score && Number(t.depression_score) >= 7)
+    .map(t => t.explanation || "No explanation provided")
     .slice(0, 3);
 
-  const currentStatus = totalLogs > 0 ? transcripts[0].sentiment : 'Stable Baseline';
+  let currentStatus = 'Stable Baseline';
+  if (totalLogs > 0) {
+    const latestScore = Number(entries[0].depression_score || 0);
+    const latestSentiment = String(entries[0].sentiment || '').toLowerCase();
+    if (latestScore >= 7 || latestSentiment === 'high distress' || latestSentiment === 'positive') {
+      currentStatus = latestScore >= 7 ? 'High Distress' : 'Stable Baseline';
+    } else if (latestScore >= 4) {
+      currentStatus = 'Moderate Distress';
+    }
+  }
 
   if (loading) {
     return (
@@ -100,7 +110,6 @@ function App() {
         }
       `}</style>
 
-      {/* Main Header Container with fixed clipping */}
       <header style={{ borderBottom: '1px solid rgba(209, 250, 213, 0.1)', paddingBottom: '24px', marginBottom: '32px', marginTop: '40px' }}>
         <h1 style={{ 
           fontSize: '2.8rem', 
@@ -115,14 +124,13 @@ function App() {
         }}>
           OncoWispr Care Hub
         </h1>
-        <p style={{ color: 'rgba(209, 250, 213, 0.5)', margin: 0, fontSize: '15px', letterSpacing: '0.3px' }}>All your past entries, resources, and analytics in one place.</p>
+        <p style={{ color: 'rgba(209, 250, 213, 0.5)', margin: 0, fontSize: '15px', letterSpacing: '0.3px' }}>Clinical Dashboard Ecosystem & NLP Pipeline</p>
       </header>
 
       <Auth user={user} />
 
       {user && (
         <>
-          {/*Tabs*/}
           <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid rgba(209, 250, 213, 0.1)', marginBottom: '32px' }}>
             <button className={`tab-btn ${activeTab === 'pipeline' ? 'active' : ''}`} onClick={() => setActiveTab('pipeline')}>Live Stream</button>
             <button className={`tab-btn ${activeTab === 'journal' ? 'active' : ''}`} onClick={() => setActiveTab('journal')}>Daily Journal</button>
@@ -135,30 +143,49 @@ function App() {
             <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', gap: '32px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 <h3 style={{ margin: 0, fontSize: '13px', color: '#4FB58C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Incoming Ingestion Stream</h3>
-                {transcripts.length === 0 ? (
+                {entries.length === 0 ? (
                   <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(209, 250, 213, 0.3)', border: '1px dashed rgba(209, 250, 213, 0.15)', borderRadius: '12px' }}>Awaiting transmission packets...</div>
                 ) : (
-                  <div className="dashboard-card" style={{ borderLeft: transcripts[0].sentiment === 'High Distress' ? '4px solid #D84231' : '4px solid #4FB58C' }}>
+                  <div className="dashboard-card" style={{ borderLeft: currentStatus === 'High Distress' ? '4px solid #D84231' : '4px solid #4FB58C' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <span style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.5)' }}>Latest Drop • {transcripts[0].timestamp}</span>
+                      <span style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.5)' }}>Latest Drop • {entries[0].timestamp || 'N/A'}</span>
                       <span 
-                        className={transcripts[0].sentiment === 'High Distress' ? 'pulse-red' : ''}
+                        className={currentStatus === 'High Distress' ? 'pulse-red' : ''}
                         style={{ 
                           fontSize: '11px', 
                           padding: '4px 10px', 
                           borderRadius: '20px', 
-                          background: transcripts[0].sentiment === 'High Distress' ? 'rgba(216, 66, 49, 0.15)' : 'rgba(26, 216, 44, 0.15)', 
-                          color: transcripts[0].sentiment === 'High Distress' ? '#D84231' : '#1AD82C', 
+                          background: currentStatus === 'High Distress' ? 'rgba(216, 66, 49, 0.15)' : 'rgba(26, 216, 44, 0.15)', 
+                          color: currentStatus === 'High Distress' ? '#D84231' : '#1AD82C', 
                           fontWeight: '700',
                           textTransform: 'uppercase'
                         }}
                       >
-                        {transcripts[0].sentiment}
+                        Wellness: {entries[0].wellness_score || 0}/10 • Score: {entries[0].depression_score || 0}
                       </span>
                     </div>
-                    <p style={{ margin: '0 0 20px 0', fontSize: '16px', lineHeight: '1.6', color: '#fff' }}>"{transcripts[0].text}"</p>
-                    <div style={{ fontSize: '13px', color: '#D1FAD5', background: 'rgba(79, 181, 140, 0.08)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(79, 181, 140, 0.15)' }}>
-                      <strong>Biomarker Output:</strong> {transcripts[0].biomarkerMatch}
+
+                    <p style={{ margin: '0 0 20px 0', fontSize: '17px', fontWeight: '500', lineHeight: '1.6', color: '#fff' }}>
+                      "{entries[0].transcript || 'No text captured yet.'}"
+                    </p>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.01)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(209,250,213,0.04)' }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(209, 250, 213, 0.4)' }}>Duration</span>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', marginTop: '4px' }}>{Number(entries[0].duration || 0).toFixed(2)}s</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.01)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(209,250,213,0.04)' }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(209, 250, 213, 0.4)' }}>Speech Tempo</span>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', marginTop: '4px' }}>{Math.round(entries[0].wpm || 0)} WPM</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.01)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(209,250,213,0.04)' }}>
+                        <span style={{ fontSize: '11px', color: 'rgba(209, 250, 213, 0.4)' }}>Avg Amplitude</span>
+                        <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff', marginTop: '4px' }}>{Number(entries[0].avg_volume || 0).toFixed(3)}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '13px', color: '#D1FAD5', background: 'rgba(79, 181, 140, 0.06)', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(79, 181, 140, 0.12)' }}>
+                      <strong>AI Clinical Parsing:</strong> <span style={{ color: 'rgba(209,250,213,0.8)' }}>{entries[0].explanation || 'Awaiting analysis summary...'}</span>
                     </div>
                   </div>
                 )}
@@ -166,10 +193,10 @@ function App() {
 
               <div>
                 <div className="dashboard-card">
-                  <h4 style={{ margin: '0 0 8px 0', color: '#4FB58C', fontWeight: '600' }}>Python Bridge Pipeline</h4>
-                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.6)', margin: '0 0 20px 0', lineHeight: '1.5' }}>Listening for audio processing completions from your partner's script.</p>
+                  <h4 style={{ margin: '0 0 8px 0', color: '#4FB58C', fontWeight: '600' }}>Python Ingestion Core</h4>
+                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.6)', margin: '0 0 20px 0', lineHeight: '1.5' }}>Actively bound to firestore instance. Waiting on vocal multi-parameter streams.</p>
                   <div style={{ fontSize: '13px', color: '#1AD82C', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '500' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#1AD82C' }}></span> Ingestion Socket Active
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#1AD82C' }}></span> Realtime Hook Active
                   </div>
                 </div>
               </div>
@@ -179,21 +206,15 @@ function App() {
           {/*Tab 2*/}
           {activeTab === 'journal' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '13px', color: '#4FB58C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Historical Transcripts Logs ({totalLogs})</h3>
-              {transcripts.map((entry) => (
+              <h3 style={{ margin: 0, fontSize: '13px', color: '#4FB58C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Historical Journal Index ({totalLogs})</h3>
+              {entries.map((entry) => (
                 <div key={entry.id} className="dashboard-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '13px' }}>
-                    <span style={{ color: 'rgba(209, 250, 213, 0.4)' }}>Logged at {entry.timestamp}</span>
-                    <span style={{ color: entry.sentiment === 'High Distress' ? '#D84231' : '#1AD82C', fontWeight: '700' }}>{entry.sentiment}</span>
+                    <span style={{ color: 'rgba(209, 250, 213, 0.4)' }}>Captured {entry.timestamp || 'N/A'} • {Math.round(entry.wpm || 0)} WPM</span>
+                    <span style={{ color: Number(entry.depression_score || 0) >= 7 ? '#D84231' : '#1AD82C', fontWeight: '700' }}>Depression Index: {entry.depression_score || 0}/10</span>
                   </div>
-                  <p style={{ margin: '0 0 14px 0', color: '#fff', fontSize: '15px' }}>"{entry.text}"</p>
-                  <div style={{ fontSize: '13px', color: '#4FB58C' }}><strong>Linguistic Variant:</strong> {entry.biomarkerMatch}</div>
-                  
-                  {entry.summary && (
-                    <div style={{ marginTop: '14px', fontSize: '13px', color: '#D1FAD5', background: 'rgba(79, 181, 140, 0.05)', padding: '12px 16px', borderRadius: '6px', borderLeft: '3px solid #4FB58C' }}>
-                      ✉️ <strong>Caregiver Update:</strong> {entry.summary}
-                    </div>
-                  )}
+                  <p style={{ margin: '0 0 12px 0', color: '#fff', fontSize: '16px' }}>"{entry.transcript || 'No audio string captured.'}"</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: 'rgba(209,250,213,0.6)' }}><strong>Diagnostic Parsing:</strong> {entry.explanation || 'No tracking insights associated with this element.'}</p>
                 </div>
               ))}
             </div>
@@ -214,7 +235,7 @@ function App() {
                     </span>
                   </div>
                   <p style={{ fontSize: '14px', color: 'rgba(209, 250, 213, 0.6)', lineHeight: '1.6', margin: 0 }}>
-                    Ratio of conversational text streams matching high or moderate distress markers against total entries.
+                    Ratio of speech samples processing severe biometric parameters versus regular baseline recordings.
                   </p>
                 </div>
                 <div style={{ width: '100%', background: 'rgba(209, 250, 213, 0.08)', height: '10px', borderRadius: '10px', marginTop: '24px', overflow: 'hidden' }}>
@@ -228,15 +249,15 @@ function App() {
                     Total Linguistic Captures
                   </h4>
                   <div style={{ fontSize: '36px', fontWeight: '800', margin: '8px 0', color: '#fff' }}>{totalLogs}</div>
-                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.4)', margin: 0 }}>Checkpoints parsed inside this sandbox domain.</p>
+                  <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.4)', margin: 0 }}>Vocal stream files stored safely inside your isolated datastore channel.</p>
                 </div>
 
                 <div className="dashboard-card">
                   <h4 style={{ margin: '0 0 12px 0', color: '#4FB58C', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase' }}>
-                    Active Biomarker Anomaly Log
+                    Active Critical Anomaly Log
                   </h4>
                   {recentFlags.length === 0 ? (
-                    <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.4)', margin: 0 }}>No critical anomalies logged in recent sessions.</p>
+                    <p style={{ fontSize: '13px', color: 'rgba(209, 250, 213, 0.4)', margin: 0 }}>No highly distressing records caught in recent cycles.</p>
                   ) : (
                     <ul style={{ margin: 0, paddingLeft: '20px', color: '#fff', fontSize: '13px', lineHeight: '1.8' }}>
                       {recentFlags.map((flag, idx) => (
@@ -269,11 +290,11 @@ function App() {
                     Connects patients with specialized peer-led counseling structures designed specifically for high-energy therapy adjustments.
                   </p>
                   <button 
-  onClick={() => window.open('https://www.cancer.org/support-programs-and-services.html', '_blank')}
-  style={{ background: 'rgba(79, 181, 140, 0.15)', color: '#4FB58C', border: 'none', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
->
-  Open Router Bridge
-</button>
+                    onClick={() => window.open('https://www.cancer.org/support-programs-and-services.html', '_blank')}
+                    style={{ background: 'rgba(79, 181, 140, 0.15)', color: '#4FB58C', border: 'none', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Open Router Bridge
+                  </button>
                 </div>
                 
                 <div className="dashboard-card" style={{ border: currentStatus === 'High Distress' ? '1px solid #D84231' : '1px solid rgba(209, 250, 213, 0.06)' }}>
@@ -285,17 +306,16 @@ function App() {
                     A direct portal matching the patient to immediate, dedicated mental health professionals who specialize in medical trauma processing.
                   </p>
                   <button 
-  onClick={() => window.open('https://988lifeline.org/', '_blank')}
-  style={{ background: currentStatus === 'High Distress' ? '#D84231' : 'rgba(209, 250, 213, 0.08)', color: currentStatus === 'High Distress' ? '#fff' : '#D1FAD5', border: 'none', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
->
-  {currentStatus === 'High Distress' ? 'Call Responder Now' : 'Access Bridge'}
-</button>
+                    onClick={() => window.open('https://988lifeline.org/', '_blank')}
+                    style={{ background: currentStatus === 'High Distress' ? '#D84231' : 'rgba(209, 250, 213, 0.08)', color: currentStatus === 'High Distress' ? '#fff' : '#D1FAD5', border: 'none', padding: '10px 16px', borderRadius: '6px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    {currentStatus === 'High Distress' ? 'Call Responder Now' : 'Access Bridge'}
+                  </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/*Sign out*/}
           <footer style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: '70px', background: '#09090c', borderTop: '1px solid rgba(209, 250, 213, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 40px', zIndex: 1000, backdropFilter: 'blur(20px)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
               <span style={{ fontSize: '13px', fontWeight: '600', color: '#4FB58C', textTransform: 'uppercase', letterSpacing: '0.5px' }}>User Status</span>
