@@ -27,13 +27,14 @@ COLOR_PRESSED    = "#E5E7EB"   # Normal mode oval fill (grayish glassmorphic)
 COLOR_PROCESSING = "#E5E7EB"
 COLOR_IDLE       = "#10B981"   # Emerald (only shown briefly)
 
-API_KEY = os.environ.get('GROQ_API_KEY')os.environ.get('GROQ_API_KEY')
+API_KEY = os.environ.get("GROQ_API_KEY") or ""
 STT_MODEL  = "whisper-large-v3-turbo"   # Speech-to-text
 DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "oncowispr.db")
 
 # Default Firebase placeholders (may be overridden by config file in same folder)
-FIREBASE_API_KEY = os.environ.get('GROQ_API_KEY')None
-FIREBASE_PROJECT_ID = None
+FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY') or None
+FIREBASE_PROJECT_ID = os.environ.get('FIREBASE_PROJECT_ID') or None
+FIREBASE_DATABASE_URL = os.environ.get('FIREBASE_DATABASE_URL') or None
 
 # Quartz flag constants
 FN_FLAG      = Quartz.kCGEventFlagMaskSecondaryFn  # fn key held
@@ -59,8 +60,8 @@ def load_firebase_config():
 # Try to load firebase config from file in the project folder
 _cfg = load_firebase_config()
 if _cfg:
-    FIREBASE_API_KEY = os.environ.get('GROQ_API_KEY')_cfg.get('apiKey') or _cfg.get('api_key') or _cfg.get('FIREBASE_API_KEY')
-    FIREBASE_PROJECT_ID = _cfg.get('projectId') or _cfg.get('project_id') or _cfg.get('project')
+    FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY") or ""
+    FIREBASE_PROJECT_ID = "oncowispr"
 
 
 def init_db():
@@ -276,10 +277,11 @@ def refine_transcription_with_groq(transcript):
             "Edit the user's transcript to correct grammar, punctuation, and spelling, "
             "while preserving and correcting oncology-specific terms, drug names, dosages, "
             "and clinical concepts. Be conservative with clinical terminology — do not "
-            "invent medical details. Output ONLY the cleaned transcription text with no commentary."
+            "DO NOTTTTTTTTT invent medical details. Output ONLY the cleaned transcription text with no commentary."
+            "make sure to just format the incoming text that youi get t trnscribe and DO NOT ANALUZE IT O RANYTING OT COMEMNTARY ON IT. JUST FORMAT THE TRANSCEIPTION THAT IS ALL THA YOU NEED TO DO STRICTLY!!!"
         )
 
-        user_msg = f"Please clean and normalize this transcript for clinical notes:\n\n{transcript}"
+        user_msg = f"make sure to just format the incoming text that youi get t trnscribe and DO NOT ANALUZE IT O RANYTING OT COMEMNTARY ON IT. JUST FORMAT THE TRANSCEIPTION THAT IS ALL THA YOU NEED TO DO STRICTLY!!! Please clean and normalize this transcript for clinical notes:\n\n{transcript}"
 
         payload = json.dumps({
             "model": "openai/gpt-oss-120b",
@@ -316,38 +318,70 @@ def send_to_firebase(entry):
     Tries common RTDB hostnames for the provided projectId.
     """
     try:
-        # If a service account JSON exists in the project folder, try authenticated Firestore
-        sa_candidates = [
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
-            for name in os.listdir(os.path.dirname(os.path.abspath(__file__)))
-            if name.startswith('oncowispr-firebase-adminsdk') and name.endswith('.json')
-        ]
-        if sa_candidates:
-            sa_path = sa_candidates[0]
+        # Prefer an explicit service account path (env or common project file)
+        sa_override = os.environ.get('FIREBASE_SERVICE_ACCOUNT')
+        # User-provided path (project root) — accept this specific filename too
+        default_sa = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'oncowispr-firebase-adminsdk-fbsvc-158b0dd60f.json')
+        sa_path = None
+        if sa_override and os.path.exists(sa_override):
+            sa_path = sa_override
+        elif os.path.exists(default_sa):
+            sa_path = default_sa
+        else:
+            # Discover any matching admin SDK json in project folder
+            for name in os.listdir(os.path.dirname(os.path.abspath(__file__))):
+                if name.startswith('oncowispr-firebase-adminsdk') and name.endswith('.json'):
+                    sa_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+                    break
+
+        if sa_path:
             try:
                 if send_to_firestore_with_service_account(entry, sa_path):
                     return True
             except Exception as e:
                 print(f"Authenticated Firestore send failed: {e}")
 
-        project = FIREBASE_PROJECT_ID or "oncowispr"
-        hosts = [f"https://{project}.firebaseio.com", f"https://{project}-default-rtdb.firebaseio.com"]
+        # If an explicit RTDB URL is provided, prefer it
         payload = json.dumps(entry).encode()
         headers = {"Content-Type": "application/json"}
-        for host in hosts:
-            url = f"{host}/entries.json"
+
+        if FIREBASE_DATABASE_URL:
+            # Allow user to provide full RTDB host like https://project.firebaseio.com
+            url = FIREBASE_DATABASE_URL.rstrip('/') + '/entries.json'
+            if FIREBASE_API_KEY:
+                sep = '&' if '?' in url else '?'
+                url = f"{url}{sep}auth={FIREBASE_API_KEY}"
             try:
                 req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     if resp.getcode() in (200, 201):
-                        print(f"Sent entry to Firebase at {url}")
+                        print(f"Sent entry to Firebase RTDB at {url}")
                         return True
             except Exception as e:
-                # try next host
-                print(f"Firebase send failed for {url}: {e}")
+                print(f"Firebase RTDB send failed for {url}: {e}")
+
+        # If no explicit DB URL, try common hostnames derived from project id
+        project = FIREBASE_PROJECT_ID
+        if project:
+            hosts = [f"https://{project}.firebaseio.com", f"https://{project}-default-rtdb.firebaseio.com"]
+            for host in hosts:
+                url = f"{host}/entries.json"
+                if FIREBASE_API_KEY:
+                    url = f"{url}?auth={FIREBASE_API_KEY}"
+                try:
+                    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+                    with urllib.request.urlopen(req, timeout=10) as resp:
+                        if resp.getcode() in (200, 201):
+                            print(f"Sent entry to Firebase at {url}")
+                            return True
+                except Exception as e:
+                    print(f"Firebase send failed for {url}: {e}")
+        else:
+            print("No Firebase DB URL or project id configured; skipping RTDB attempts")
 
         # Fallback: try Firestore REST API (best-effort, requires appropriate rules)
         try:
+            # Best-effort: attempt Firestore REST write if project+API key are available
             if FIREBASE_PROJECT_ID and FIREBASE_API_KEY:
                 fs_url = f"https://firestore.googleapis.com/v1/projects/{FIREBASE_PROJECT_ID}/databases/(default)/documents/entries?key={FIREBASE_API_KEY}"
                 # convert flat entry dict into Firestore document fields
